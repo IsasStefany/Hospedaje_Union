@@ -1,0 +1,207 @@
+-- ============================================================================
+-- SISTEMA DE CONTROL HOTELERO - "HOSPEDAJE UNION"
+-- BANCO DE CONSULTAS SQL Y REPORTES OPERATIVOS
+-- ============================================================================
+
+USE HospedajeUnion;
+GO
+
+-- ============================================================================
+-- BLOQUE 1: MAESTROS Y CONFIGURACIONES BASE (Mantenimiento)
+-- ============================================================================
+
+-- 1.1. Listado maestro de usuarios del sistema
+SELECT
+    id,
+    nombre,
+    usuario,
+    contrasena,
+    rol,
+    activo,
+    fecha_creacion
+FROM usuarios
+ORDER BY id;
+GO
+
+-- 1.2. Inventario completo de habitaciones (Ordenado por ubicación física)
+SELECT
+    id,
+    numero,
+    piso,
+    tipo,
+    descripcion,
+    precio_noche,
+    precio_cama1,
+    precio_rebaja,
+    dias_minimo_rebaja,
+    estado,
+    tiene_banio_propio,
+    es_cuarto_especial
+FROM habitaciones
+ORDER BY piso, numero;
+GO
+
+
+-- ============================================================================
+-- BLOQUE 2: GESTIÓN OPERATIVA Y MONITOREO EN TIEMPO REAL
+-- ============================================================================
+
+-- 2.1. Maestro histórico de huéspedes (Últimos registros primero)
+SELECT
+    id,
+    nombres,
+    apellidos,
+    nombres + ' ' + apellidos AS nombre_completo,
+    dni,
+    procedencia,
+    motivo_visita,
+    telefono,
+    fecha_registro
+FROM huespedes
+ORDER BY fecha_registro DESC;
+GO
+
+-- 2.2. Monitoreo de habitaciones ocupadas ("Huéspedes Activos" en tiempo real)
+SELECT
+    r.id                            AS reserva_id,
+    h.numero                        AS habitacion,
+    h.tipo                          AS tipo_habitacion,
+    hu.nombres + ' ' + hu.apellidos AS huesped,
+    hu.dni,
+    hu.procedencia,
+    r.fecha_entrada,
+    r.fecha_vencimiento,
+    r.precio_cobrado,
+    r.uso_camas,
+    r.estado,
+    u.nombre                        AS atendido_por
+FROM reservas r
+JOIN huespedes   hu ON hu.id = r.huesped_id
+JOIN habitaciones h ON h.id  = r.habitacion_id
+JOIN usuarios     u ON u.id  = r.usuario_id
+WHERE r.estado = 'ACTIVA'
+ORDER BY r.fecha_entrada DESC;
+GO
+
+-- 2.3. Vista de Ocupación General (Catálogo Completo Disponible/Ocupado)
+SELECT * FROM v_ocupacion_actual
+ORDER BY piso, numero;
+GO
+
+-- 2.4. Historial transaccional completo de reservas (Bitácora de movimientos)
+SELECT
+    r.id                            AS reserva_id,
+    h.numero                        AS habitacion,
+    h.tipo                          AS tipo_habitacion,
+    hu.nombres + ' ' + hu.apellidos AS huesped,
+    hu.dni,
+    r.fecha_entrada,
+    r.fecha_vencimiento,
+    r.fecha_salida_real,
+    r.precio_cobrado,
+    r.estado,
+    u.nombre                        AS atendido_por,
+    r.fecha_creacion
+FROM reservas r
+JOIN huespedes   hu ON hu.id = r.huesped_id
+JOIN habitaciones h ON h.id  = r.habitacion_id
+JOIN usuarios     u ON u.id  = r.usuario_id
+ORDER BY r.fecha_creacion DESC;
+GO
+
+
+-- ============================================================================
+-- BLOQUE 3: AUDITORÍA FINANCIERA (Flujo de Caja Chica)
+-- ============================================================================
+
+-- 3.1. Historial de estados y saldos de Caja Diaria
+SELECT
+    fecha,
+    total_ingresos,
+    total_gastos,
+    saldo_neto,
+    cerrado,
+    hora_cierre
+FROM caja_diaria
+ORDER BY fecha DESC;
+GO
+
+-- 3.2. Rendición de Gastos diarios detallados con trazabilidad de usuario
+SELECT
+    g.id,
+    g.fecha,
+    g.concepto,
+    g.monto,
+    u.nombre AS registrado_por,
+    g.fecha_registro
+FROM gastos g
+JOIN usuarios u ON u.id = g.usuario_id
+ORDER BY g.fecha DESC, g.fecha_registro DESC;
+GO
+
+
+-- ============================================================================
+-- BLOQUE 4: INTELIGENCIA DE NEGOCIO Y REPORTES GERENCIALES
+-- ============================================================================
+
+-- 4.1. Cierre financiero del día en curso (Métricas instantáneas para el Dashboard)
+SELECT
+    COUNT(*)            AS total_reservas_hoy,
+    SUM(precio_cobrado) AS total_ingresos_hoy
+FROM reservas
+WHERE CAST(fecha_creacion AS DATE) = CAST(GETDATE() AS DATE)
+  AND estado IN ('ACTIVA','FINALIZADA','EXTENDIDA');
+GO
+
+-- 4.2. Análisis de ingresos mensuales del año actual (Para alimentar gráficos estadísticos)
+SELECT
+    MONTH(fecha_creacion)           AS mes,
+    DATENAME(MONTH, fecha_creacion) AS nombre_mes,
+    COUNT(*)                        AS total_reservas,
+    SUM(precio_cobrado)             AS total_ingresos
+FROM reservas
+WHERE YEAR(fecha_creacion) = YEAR(GETDATE())
+  AND estado IN ('ACTIVA','FINALIZADA','EXTENDIDA')
+GROUP BY MONTH(fecha_creacion), DATENAME(MONTH, fecha_creacion)
+ORDER BY MONTH(fecha_creacion);
+GO
+
+-- 4.3. Perfil de Cliente Frecuente (Historial de rentabilidad e impactos por huésped)
+-- Nota: Reemplazar el parámetro de la cláusula WHERE con el DNI del cliente a evaluar
+SELECT
+    hu.id,
+    hu.nombres + ' ' + hu.apellidos AS nombre_completo,
+    hu.dni,
+    hu.procedencia,
+    hu.motivo_visita,
+    COUNT(r.id)                     AS total_estancias,
+    SUM(r.precio_cobrado)           AS total_gastado
+FROM huespedes hu
+LEFT JOIN reservas r ON r.huesped_id = hu.id
+WHERE hu.dni = '12345678' -- <-- Parámetro de búsqueda dinámica por DNI
+GROUP BY hu.id, hu.nombres, hu.apellidos, hu.dni, hu.procedencia, hu.motivo_visita;
+GO
+
+
+-- ============================================
+--  -- BLOQUE 4: VERIFICAR PEDIDOS DE LAVANDERIA
+-- ============================================
+SELECT
+    l.id,
+    l.nombre_huesped,
+    h.numero        AS habitacion,
+    l.kilos,
+    l.costo_total,
+    l.tipo,
+    l.estado,
+    l.observaciones,
+    l.fecha_registro,
+    l.fecha_entrega,
+    u.nombre        AS registrado_por
+FROM lavanderia l
+JOIN habitaciones h ON h.id = l.habitacion_id
+JOIN usuarios     u ON u.id = l.usuario_id
+ORDER BY l.fecha_registro DESC;
+GO
+ 
+ 
